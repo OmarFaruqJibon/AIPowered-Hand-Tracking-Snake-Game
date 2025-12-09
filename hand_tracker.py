@@ -17,7 +17,7 @@ class HandTracker:
             static_image_mode=False,
             max_num_hands=maxHands,
             min_detection_confidence=detectionCon,
-            min_tracking_confidence=0.9  # Much more stable
+            min_tracking_confidence=0.7
         )
 
         self.frame = None
@@ -68,7 +68,7 @@ class HandTracker:
             self.smooth_index_pos = (ix, iy)
         else:
             sx, sy = self.smooth_index_pos
-            if abs(ix - sx) > 20 or abs(iy - sy) > 20:  # Only update on meaningful movement
+            if abs(ix - sx) > 5 or abs(iy - sy) > 5:
                 sx = self.alpha * ix + (1 - self.alpha) * sx
                 sy = self.alpha * iy + (1 - self.alpha) * sy
                 self.smooth_index_pos = (sx, sy)
@@ -78,7 +78,7 @@ class HandTracker:
         pips = [6, 10, 14, 18]
         fingers = []
         for tip, pip in zip(tips, pips):
-            if lmList[tip][1] < lmList[pip][1] - 15:  # stricter
+            if lmList[tip][1] < lmList[pip][1] - 5:  # stricter
                 fingers.append(1)
             else:
                 fingers.append(0)

@@ -8,7 +8,7 @@ from hand_tracker import HandTracker, CAM_W, CAM_H
 CELL_SIZE = 24
 GRID_W = 28
 GRID_H = 21
-FPS = 7 
+FPS = 3 
 PREVIEW_W, PREVIEW_H = 200, 150
 
 # Colors
@@ -156,7 +156,7 @@ def main():
             dx = ix - cx
             dy = iy - cy
 
-            threshold = 70  # pixels from center to trigger direction
+            threshold = 30 
 
             if abs(dx) > threshold or abs(dy) > threshold:
                 if abs(dx) > abs(dy):
