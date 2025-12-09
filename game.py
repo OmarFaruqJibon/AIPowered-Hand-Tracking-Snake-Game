@@ -11,7 +11,7 @@ class SnakeGame:
     def reset(self):
         midx = self.cols // 2
         midy = self.rows // 2
-        self.snake = [(midx, midy), (midx - 1, midy), (midx - 2, midy)]
+        self.snake = [(midx, midy), (midx-1, midy), (midx-2, midy)]
         self.dir = (1, 0)
         self.spawn_food()
         self.score = 0
@@ -19,17 +19,8 @@ class SnakeGame:
         self.paused = False
 
     def spawn_food(self):
-        free = [(x, y) for x in range(self.cols) for y in range(self.rows)
-                if (x, y) not in self.snake]
+        free = [(x, y) for x in range(self.cols) for y in range(self.rows) if (x, y) not in self.snake]
         self.food = random.choice(free) if free else None
-
-    def clamp_dir(self, new):
-        px, py = self.dir
-        nx, ny = new
-        # prevent reversing
-        if (px == 1 and nx == -1) or (px == -1 and nx == 1) or (py == 1 and ny == -1) or (py == -1 and ny == 1):
-            return self.dir
-        return new
 
     def step(self):
         if self.game_over or self.paused:
@@ -39,19 +30,9 @@ class SnakeGame:
         dx, dy = self.dir
         new_head = (head[0] + dx, head[1] + dy)
 
-        # WRAP (Option A)
-        new_x, new_y = new_head
-        if new_x < 0:
-            new_x = self.cols - 1
-        elif new_x >= self.cols:
-            new_x = 0
-        if new_y < 0:
-            new_y = self.rows - 1
-        elif new_y >= self.rows:
-            new_y = 0
-        new_head = (new_x, new_y)
+        # Wrap around
+        new_head = (new_head[0] % self.cols, new_head[1] % self.rows)
 
-        # collision with self
         if new_head in self.snake:
             self.game_over = True
             return

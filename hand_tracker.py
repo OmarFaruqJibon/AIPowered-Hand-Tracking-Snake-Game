@@ -1,66 +1,93 @@
 # hand_tracker.py
 import cv2
-from cvzone.HandTrackingModule import HandDetector
+import mediapipe as mp
+import threading
 import time
 
 CAM_W, CAM_H = 640, 480
 
 class HandTracker:
-    def __init__(self, maxHands=1, detectionCon=0.6):
+    def __init__(self, maxHands=1, detectionCon=0.7, smoothing_alpha=0.4):
         self.cap = cv2.VideoCapture(0)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_W)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_H)
-        self.detector = HandDetector(maxHands=maxHands, detectionCon=detectionCon)
-        self.last_index_pos = None
 
-        # gesture debounce
-        self._last_gesture_time = 0
-        self._gesture_cooldown = 0.6  # seconds
+        self.mp_hands = mp.solutions.hands
+        self.hands = self.mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=maxHands,
+            min_detection_confidence=detectionCon,
+            min_tracking_confidence=0.9  # Much more stable
+        )
+
+        self.frame = None
+        self.hands_data = None
+        self.lock = threading.Lock()
+        self.running = True
+        self.thread = threading.Thread(target=self.update_loop, daemon=True)
+        self.thread.start()
+
+        self.smooth_index_pos = None
+        self.alpha = smoothing_alpha
+        self.last_index_pos = None
+        self.prev_index_pos = None
+
+    def update_loop(self):
+        while self.running:
+            success, frame = self.cap.read()
+            if not success:
+                continue
+            frame = cv2.flip(frame, 1)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = self.hands.process(rgb_frame)
+
+            hands_list = []
+            if results.multi_hand_landmarks:
+                for handLms in results.multi_hand_landmarks:
+                    lmList = [(int(lm.x * CAM_W), int(lm.y * CAM_H)) for lm in handLms.landmark]
+                    hands_list.append({"lmList": lmList})
+
+            with self.lock:
+                self.frame = frame.copy()
+                self.hands_data = hands_list
 
     def read_frame(self):
-        success, frame = self.cap.read()
-        if not success:
-            return None, None
-        frame = cv2.flip(frame, 1)
-        hands, img = self.detector.findHands(frame, flipType=False, draw=False)
-        return frame, hands
+        with self.lock:
+            return self.frame.copy() if self.frame is not None else None, self.hands_data.copy() if self.hands_data is not None else []
 
     def get_index_and_fingers(self, hands):
-
         if not hands:
             return None, None
+
         hand = hands[0]
-        lmList = hand["lmList"]  # 21 points
-        ix, iy = int(lmList[8][0]), int(lmList[8][1])  # index fingertip
-        self.last_index_pos = (ix, iy)
+        lmList = hand["lmList"]
+        ix, iy = lmList[8]  # Index fingertip
 
-        # cvzone HandDetector has fingersUp() method
-        try:
-            fingers = self.detector.fingersUp(hand)
-            fingers_count = sum(fingers)
-        except Exception:
-            # fallback: unknown -> None
-            fingers_count = None
+        # Improved smoothing with deadzone
+        if self.smooth_index_pos is None:
+            self.smooth_index_pos = (ix, iy)
+        else:
+            sx, sy = self.smooth_index_pos
+            if abs(ix - sx) > 20 or abs(iy - sy) > 20:  # Only update on meaningful movement
+                sx = self.alpha * ix + (1 - self.alpha) * sx
+                sy = self.alpha * iy + (1 - self.alpha) * sy
+                self.smooth_index_pos = (sx, sy)
 
-        return (ix, iy), fingers_count
+        # Finger up detection: tip higher than PIP joint
+        tips = [8, 12, 16, 20]
+        pips = [6, 10, 14, 18]
+        fingers = []
+        for tip, pip in zip(tips, pips):
+            if lmList[tip][1] < lmList[pip][1] - 15:  # stricter
+                fingers.append(1)
+            else:
+                fingers.append(0)
+        fingers_count = sum(fingers)
 
-    def detect_pause_toggle_gesture(self, hands):
-        frame, hands_local = None, hands
-        _, fingers = self.get_index_and_fingers(hands_local)
-        now = time.time()
-        if fingers is None:
-            return None
-
-        if now - self._last_gesture_time < self._gesture_cooldown:
-            return None
-
-        if fingers == 0:
-            self._last_gesture_time = now
-            return "toggle"
-        if fingers >= 2:
-            self._last_gesture_time = now
-            return "resume"
-        return None
+        return (int(self.smooth_index_pos[0]), int(self.smooth_index_pos[1])), fingers_count
 
     def release(self):
+        self.running = False
+        self.thread.join()
         self.cap.release()
+        cv2.destroyAllWindows()
